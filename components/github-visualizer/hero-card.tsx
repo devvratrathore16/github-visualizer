@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { Database } from 'lucide-react';
+import { Database, Code2, GitBranch, Zap } from 'lucide-react';
 import { DeveloperProfile } from '@/lib/types';
 
 interface HeroCardProps {
@@ -25,19 +25,13 @@ function NeuralNetworkIcon() {
           <stop offset="100%" style={{ stopColor: '#06b6d4', stopOpacity: 1 }} />
         </linearGradient>
       </defs>
-
-      {/* Central node */}
       <circle cx="14" cy="14" r="3" fill="url(#neuralGradient)" filter="url(#glow)" />
-
-      {/* Connecting lines */}
       <line x1="14" y1="14" x2="5" y2="5" stroke="url(#neuralGradient)" strokeWidth="1" opacity="0.6" />
       <line x1="14" y1="14" x2="23" y2="5" stroke="url(#neuralGradient)" strokeWidth="1" opacity="0.6" />
       <line x1="14" y1="14" x2="5" y2="23" stroke="url(#neuralGradient)" strokeWidth="1" opacity="0.6" />
       <line x1="14" y1="14" x2="23" y2="23" stroke="url(#neuralGradient)" strokeWidth="1" opacity="0.6" />
       <line x1="14" y1="14" x2="14" y2="4" stroke="url(#neuralGradient)" strokeWidth="1" opacity="0.5" />
       <line x1="14" y1="14" x2="24" y2="14" stroke="url(#neuralGradient)" strokeWidth="1" opacity="0.5" />
-
-      {/* Peripheral nodes */}
       <circle cx="5" cy="5" r="1.5" fill="#a855f7" opacity="0.8" />
       <circle cx="23" cy="5" r="1.5" fill="#06b6d4" opacity="0.8" />
       <circle cx="5" cy="23" r="1.5" fill="#06b6d4" opacity="0.8" />
@@ -48,10 +42,30 @@ function NeuralNetworkIcon() {
   );
 }
 
+// Extracts the archetype label from the synthesis text
+// Example: "...Archetype: The Iterative Prototyper" → "The Iterative Prototyper"
+function extractArchetype(synthesis: string | null): string | null {
+  if (!synthesis) return null;
+  const match = synthesis.match(/(?:Developer\s+)?Archetype:\s*(.+?)(?:\n|$)/i);
+  return match ? match[1].trim() : null;
+}
+
+// Removes the archetype line from synthesis so it doesn't appear twice
+function extractMainSynthesis(synthesis: string | null): string | null {
+  if (!synthesis) return null;
+  return synthesis
+    .replace(/(?:Developer\s+)?Archetype:\s*.+?(?:\n|$)/gi, '')
+    .trim();
+}
+
 export default function HeroCard({ data }: HeroCardProps) {
+  const archetype = extractArchetype(data.synthesis);
+  const mainSynthesis = extractMainSynthesis(data.synthesis);
+  const topLanguage = data.topLanguages[0]?.name ?? 'N/A';
+  const topLanguageColor = data.topLanguages[0]?.color ?? '#06b6d4';
+
   return (
     <div className="relative mb-12">
-      {/* Card */}
       <div className="relative bg-black border border-white/10 micro-sharp p-8 md:p-12 overflow-hidden">
 
         {/* Tech Grid Background Pattern */}
@@ -85,8 +99,8 @@ export default function HeroCard({ data }: HeroCardProps) {
           {/* Info */}
           <div className="flex-1">
 
-            {/* Name */}
-            <div className="flex items-center gap-3 mb-4">
+            {/* Name + Neural Icon */}
+            <div className="flex items-center gap-3 mb-2">
               <h2 className="text-4xl md:text-5xl font-bold text-slate-50"
                 style={{ fontFamily: 'var(--font-inter), Inter, sans-serif' }}>
                 {data.name}
@@ -97,10 +111,22 @@ export default function HeroCard({ data }: HeroCardProps) {
             </div>
 
             {/* Username */}
-            <p className="text-sm text-slate-400 mb-6"
+            <p className="text-sm text-slate-400 mb-4"
               style={{ fontFamily: 'var(--font-jetbrains-mono), JetBrains Mono, monospace', letterSpacing: '0.05em' }}>
               @{data.username}
             </p>
+
+            {/* Archetype Badge */}
+            {archetype && (
+              <div className="mb-6 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-purple-500/40 bg-purple-500/10"
+                style={{ boxShadow: '0 0 20px rgba(168, 85, 247, 0.15)' }}>
+                <Zap className="w-3.5 h-3.5 text-purple-400" />
+                <span className="text-xs font-semibold text-purple-300 uppercase tracking-widest"
+                  style={{ fontFamily: 'var(--font-jetbrains-mono), JetBrains Mono, monospace' }}>
+                  {archetype}
+                </span>
+              </div>
+            )}
 
             {/* AI Synthesis Section */}
             <div className="mb-8">
@@ -110,37 +136,70 @@ export default function HeroCard({ data }: HeroCardProps) {
                   style={{ filter: 'drop-shadow(0 0 4px #a855f7)' }} />
                 AI Developer Synthesis
               </h3>
-
-              {/* 
-                Show AI synthesis if available.
-                Fall back to GitHub bio if AI returned null.
-              */}
               <p className="text-slate-300 leading-relaxed text-sm md:text-base font-light"
                 style={{ fontFamily: 'var(--font-inter), Inter, sans-serif' }}>
-                {data.synthesis ?? data.bio}
+                {mainSynthesis ?? data.bio}
               </p>
             </div>
 
-            {/* Contributions KPI */}
-            <div className="flex">
+            {/* KPI Cards — 3 real metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+              {/* Contributions */}
               <div className="kpi-gradient-border">
                 <div className="kpi-content">
                   <div className="flex items-center gap-2 mb-3">
                     <Database className="w-4 h-4 text-cyan-400" strokeWidth={2}
                       style={{ filter: 'drop-shadow(0 0 3px #06b6d4)' }} />
-                    <p className="text-xs text-slate-400 uppercase"
+                    <p className="text-slate-400 uppercase"
                       style={{ fontFamily: 'var(--font-jetbrains-mono), JetBrains Mono, monospace', letterSpacing: '0.05em', fontSize: '10px' }}>
                       Contributions
                     </p>
                   </div>
-                  <p className="text-3xl font-bold neon-number"
+                  <p className="text-3xl font-bold"
                     style={{ fontFamily: 'var(--font-jetbrains-mono), JetBrains Mono, monospace', color: '#06b6d4' }}>
                     {data.totalContributions}
                   </p>
                 </div>
               </div>
-            </div>
 
+              {/* Top Language */}
+              <div className="kpi-gradient-border">
+                <div className="kpi-content">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Code2 className="w-4 h-4" strokeWidth={2}
+                      style={{ color: topLanguageColor, filter: `drop-shadow(0 0 3px ${topLanguageColor})` }} />
+                    <p className="text-slate-400 uppercase"
+                      style={{ fontFamily: 'var(--font-jetbrains-mono), JetBrains Mono, monospace', letterSpacing: '0.05em', fontSize: '10px' }}>
+                      Top Language
+                    </p>
+                  </div>
+                  <p className="text-xl font-bold truncate"
+                    style={{ fontFamily: 'var(--font-jetbrains-mono), JetBrains Mono, monospace', color: topLanguageColor }}>
+                    {topLanguage}
+                  </p>
+                </div>
+              </div>
+
+              {/* Total Repos */}
+              <div className="kpi-gradient-border">
+                <div className="kpi-content">
+                  <div className="flex items-center gap-2 mb-3">
+                    <GitBranch className="w-4 h-4 text-emerald-400" strokeWidth={2}
+                      style={{ filter: 'drop-shadow(0 0 3px #10b981)' }} />
+                    <p className="text-slate-400 uppercase"
+                      style={{ fontFamily: 'var(--font-jetbrains-mono), JetBrains Mono, monospace', letterSpacing: '0.05em', fontSize: '10px' }}>
+                      Repositories
+                    </p>
+                  </div>
+                  <p className="text-3xl font-bold"
+                    style={{ fontFamily: 'var(--font-jetbrains-mono), JetBrains Mono, monospace', color: '#10b981' }}>
+                    {data.repositories.length}
+                  </p>
+                </div>
+              </div>
+
+            </div>
           </div>
         </div>
       </div>

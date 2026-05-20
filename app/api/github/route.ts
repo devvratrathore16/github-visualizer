@@ -1,4 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
+// ============================================================
+// RATE LIMITER
+// WHY: Prevents a single user from spamming searches and
+// exhausting our GitHub PAT quota on the free tier.
+// Allows 10 requests per minute per IP address.
+// ============================================================
+
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_MAX = 10;       // max requests
+const RATE_LIMIT_WINDOW = 60000; // per 60 seconds
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+
+  if (!record || now > record.resetTime) {
+    // First request or window expired — start fresh
+    rateLimitMap.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return false;
+  }
+
+  if (record.count >= RATE_LIMIT_MAX) {
+    return true;
+  }
+
+  record.count++;
+  return false;
+}
 
 // ============================================================
 // SECTION 1: TYPE DEFINITIONS
@@ -93,11 +121,23 @@ export async function POST(request: NextRequest) {
     try {
         // --- 3a. Parse and validate the incoming request ---
         const body = await request.json();
+        // --- Rate limit check ---
+        const ip =
+            request.headers.get('x-forwarded-for')?.split(',')[0].trim() ??
+            request.headers.get('x-real-ip') ??
+            'unknown';
+
+        if (isRateLimited(ip)) {
+        return NextResponse.json(
+        { error: 'Too many requests. Please wait a minute before searching again.' },
+        { status: 429 }
+    );
+}
         const { username } = body;
 
         if (!username || typeof username !== 'string') {
             return NextResponse.json(
-                { error: 'Username is required' },
+                { error: 'Please enter a GitHub username to search.' },
                 { status: 400 }
             );
         }
@@ -105,7 +145,7 @@ export async function POST(request: NextRequest) {
         const sanitisedUsername = username.trim().replace(/[^a-zA-Z0-9\-]/g, '');
         if (!sanitisedUsername || sanitisedUsername.length > 39) {
             return NextResponse.json(
-                { error: 'Invalid GitHub username' },
+                { error: 'Please enter a valid GitHub username. Usernames can only contain letters, numbers, and hyphens.' },
                 { status: 400 }
             );
         }
@@ -116,14 +156,14 @@ export async function POST(request: NextRequest) {
 
         if (!githubToken) {
             return NextResponse.json(
-                { error: 'GitHub token not configured' },
+                { error: 'Server configuration error. Please contact support.' },
                 { status: 500 }
             );
         }
 
         if (!openrouterKey) {
             return NextResponse.json(
-                { error: 'OpenRouter API key not configured' },
+                { error: 'Server configuration error. Please contact support.' },
                 { status: 500 }
             );
         }
@@ -189,8 +229,9 @@ export async function POST(request: NextRequest) {
         });
 
         if (!githubResponse.ok) {
+            console.error('GitHub HTTP error:', githubResponse.status);
             return NextResponse.json(
-                { error: `GitHub API error: ${githubResponse.status}` },
+                { error: 'GitHub is not responding right now. Please try again in a moment.' },
                 { status: 502 }
             );
         }
@@ -198,17 +239,26 @@ export async function POST(request: NextRequest) {
         const githubResult = await githubResponse.json();
 
         if (githubResult.errors) {
+            console.error('GitHub GraphQL errors:', githubResult.errors);
+            const isRateLimited = githubResult.errors.some(
+                (e: any) => e.type === 'RATE_LIMITED'
+            );
+            if (isRateLimited) {
+                return NextResponse.json(
+                    { error: 'GitHub rate limit reached. Please wait a minute and try again.' },
+                    { status: 429 }
+                );
+            }
             return NextResponse.json(
-                { error: 'GitHub GraphQL error', details: githubResult.errors },
+                { error: 'Could not load GitHub data. Please try again in a moment.' },
                 { status: 502 }
             );
         }
 
         const user: RawGitHubUser = githubResult.data?.user;
-
         if (!user) {
             return NextResponse.json(
-                { error: `User "${sanitisedUsername}" not found` },
+                { error: `No GitHub user found with the username "${sanitisedUsername}". Please check the spelling and try again.` },
                 { status: 404 }
             );
         }
@@ -216,24 +266,20 @@ export async function POST(request: NextRequest) {
         // --- 3d. Sanitize the raw data ---
         const sanitizedData = sanitizeForAI(user, sanitisedUsername);
 
-        // --- 3e. Call OpenRouter using the free router ---
-        // WHY openrouter/free: Instead of hardcoding model names that
-        // keep changing, this special ID lets OpenRouter automatically
-        // pick the best available free model for us every time.
+        // --- 3e. Call OpenRouter with multi-model fallback ---
+        // WHY: Free models get rate limited frequently. Trying multiple
+        // models in order means the user almost always gets a synthesis.
         let synthesis: string | null = null;
 
-        const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${openrouterKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: 'openrouter/free',
-                messages: [
-                    {
-                        role: 'user',
-                        content: `You are an expert technical recruiter writing a developer identity card.
+        const MODELS = [
+            'openrouter/free',
+            'meta-llama/llama-3.3-70b-instruct:free',
+            'deepseek/deepseek-r1:free',
+            'deepseek/deepseek-v3:free',
+            'meta-llama/llama-4-maverick:free',
+        ];
+
+        const PROMPT = `You are an expert technical recruiter writing a developer identity card.
 Given structured GitHub profile data, write exactly 2-3 sentences that:
 1. Identify the developer's primary technical domain and stack
 2. Comment on their activity level and project patterns
@@ -243,18 +289,40 @@ Be specific, professional, and concise. Do not invent facts not present in the d
 
 Here is the sanitized GitHub profile data:
 
-${sanitizedData}`,
-                    },
-                ],
-            }),
-        });
+${sanitizedData}`;
 
-        if (aiResponse.ok) {
-            const aiResult = await aiResponse.json();
-            synthesis = aiResult.choices?.[0]?.message?.content ?? null;
-            console.log('✅ Got synthesis:', synthesis);
-        } else {
-            console.error('❌ AI failed:', aiResponse.status, await aiResponse.text());
+        for (const model of MODELS) {
+
+
+            const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${openrouterKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model,
+                    messages: [{ role: 'user', content: PROMPT }],
+                }),
+            });
+
+            if (aiResponse.ok) {
+                const aiResult = await aiResponse.json();
+                const text = aiResult.choices?.[0]?.message?.content ?? null;
+                if (text) {
+                    synthesis = text;
+
+                    break;
+                }
+            }
+
+            if (aiResponse.status === 429) {
+
+                continue;
+            }
+
+            const errBody = await aiResponse.text();
+            console.error(`❌ ${model} failed:`, aiResponse.status, errBody);
         }
 
         // --- 3f. Return everything to the client ---
@@ -262,13 +330,12 @@ ${sanitizedData}`,
             success: true,
             data: user,
             synthesis,
-            sanitizedData,
         });
 
     } catch (error) {
-        console.error('Route error:', error);
+        console.error('Unexpected route error:', error);
         return NextResponse.json(
-            { error: 'Internal server error' },
+            { error: 'Something went wrong on our end. Please try again.' },
             { status: 500 }
         );
     }
