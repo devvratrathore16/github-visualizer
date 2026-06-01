@@ -55,7 +55,6 @@ export async function POST(request: NextRequest) {
       'meta-llama/llama-4-maverick:free',
     ];
 
-    // Fix 1 — Short prompt for faster response
     const PROMPT = `Analyze this GitHub developer profile in exactly 2 sentences. End with "Archetype: The [Label]" on its own line. Be specific and professional.
 
 ${sanitizedData}`;

@@ -6,6 +6,7 @@ import { DeveloperProfile } from '@/lib/types';
 
 interface HeroCardProps {
   data: DeveloperProfile;
+  synthesisLoading: boolean;
 }
 
 // Neural Network Icon Component
@@ -42,15 +43,12 @@ function NeuralNetworkIcon() {
   );
 }
 
-// Extracts the archetype label from the synthesis text
-// Example: "...Archetype: The Iterative Prototyper" → "The Iterative Prototyper"
 function extractArchetype(synthesis: string | null): string | null {
   if (!synthesis) return null;
   const match = synthesis.match(/(?:Developer\s+)?Archetype:\s*(.+?)(?:\n|$)/i);
   return match ? match[1].trim() : null;
 }
 
-// Removes the archetype line from synthesis so it doesn't appear twice
 function extractMainSynthesis(synthesis: string | null): string | null {
   if (!synthesis) return null;
   return synthesis
@@ -58,7 +56,7 @@ function extractMainSynthesis(synthesis: string | null): string | null {
     .trim();
 }
 
-export default function HeroCard({ data }: HeroCardProps) {
+export default function HeroCard({ data, synthesisLoading }: HeroCardProps) {
   const archetype = extractArchetype(data.synthesis);
   const mainSynthesis = extractMainSynthesis(data.synthesis);
   const topLanguage = data.topLanguages[0]?.name ?? 'N/A';
@@ -82,7 +80,7 @@ export default function HeroCard({ data }: HeroCardProps) {
         <div className="relative flex flex-col md:flex-row items-start gap-8">
 
           {/* Avatar */}
-          <div className="flex-shrink-0">
+          <div className="shrink-0">
             <div className="kpi-gradient-border w-36 h-36" style={{ borderRadius: '50%' }}>
               <div className="relative w-full h-full overflow-hidden kpi-content flex items-center justify-center" style={{ borderRadius: '50%' }}>
                 <Image
@@ -116,7 +114,7 @@ export default function HeroCard({ data }: HeroCardProps) {
               @{data.username}
             </p>
 
-            {/* Archetype Badge */}
+            {/* Archetype Badge — only shows once AI has loaded */}
             {archetype && (
               <div className="mb-6 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-purple-500/40 bg-purple-500/10"
                 style={{ boxShadow: '0 0 20px rgba(168, 85, 247, 0.15)' }}>
@@ -136,13 +134,30 @@ export default function HeroCard({ data }: HeroCardProps) {
                   style={{ filter: 'drop-shadow(0 0 4px #a855f7)' }} />
                 AI Developer Synthesis
               </h3>
-              <p className="text-slate-300 leading-relaxed text-sm md:text-base font-light"
-                style={{ fontFamily: 'var(--font-inter), Inter, sans-serif' }}>
-                {mainSynthesis ?? data.bio}
-              </p>
+
+              {synthesisLoading && !data.synthesis ? (
+                // Fix 4 — Loading message + skeleton while AI runs in background
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                    <span className="text-xs text-slate-500"
+                      style={{ fontFamily: 'var(--font-jetbrains-mono), JetBrains Mono, monospace' }}>
+                      AI is analyzing your profile...
+                    </span>
+                  </div>
+                  <div className="h-3 bg-slate-800 rounded animate-pulse w-full" />
+                  <div className="h-3 bg-slate-800 rounded animate-pulse w-5/6" />
+                  <div className="h-3 bg-slate-800 rounded animate-pulse w-4/6" />
+                </div>
+              ) : (
+                <p className="text-slate-300 leading-relaxed text-sm md:text-base font-light"
+                  style={{ fontFamily: 'var(--font-inter), Inter, sans-serif' }}>
+                  {mainSynthesis ?? data.bio}
+                </p>
+              )}
             </div>
 
-            {/* KPI Cards — 3 real metrics */}
+            {/* KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 
               {/* Contributions */}

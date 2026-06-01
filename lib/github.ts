@@ -8,9 +8,10 @@ const colorMap: Record<string, string> = {
   'Shell': '#89e051', 'Vue': '#41b883', 'Svelte': '#ff3e00',
 };
 
+// Fetches GitHub profile data only — fast (2-3 seconds)
 export async function fetchDeveloperProfile(username: string): Promise<{
   profile: DeveloperProfile;
-  synthesis: string | null;
+  sanitizedData: string;
 }> {
   const response = await fetch('/api/github', {
     method: 'POST',
@@ -23,9 +24,8 @@ export async function fetchDeveloperProfile(username: string): Promise<{
     throw new Error(err.error || 'Failed to fetch profile');
   }
 
-  const { data, synthesis } = await response.json();
+  const { data, sanitizedData } = await response.json();
 
-  // Build real language percentages from repo language byte sizes
   const languageCounts: Record<string, number> = {};
   let totalBytes = 0;
 
@@ -63,11 +63,32 @@ export async function fetchDeveloperProfile(username: string): Promise<{
     totalContributions: data.contributionsCollection.contributionCalendar.totalContributions,
     topLanguages,
     repositories,
-    synthesis, // AI synthesis stored directly in the profile
+    synthesis: null, // starts null, filled in separately by /api/analyze
   };
 
-  return {
-    profile,
-    synthesis,
-  };
+  return { profile, sanitizedData };
+}
+
+// Fetches AI synthesis separately — runs in background while profile is visible
+export async function fetchSynthesis(sanitizedData: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    // Give up after 50 seconds — show bio as fallback instead
+    const timeout = setTimeout(() => controller.abort(), 50000);
+
+    const response = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sanitizedData }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+    if (!response.ok) return null;
+    const { synthesis } = await response.json();
+    return synthesis ?? null;
+  } catch {
+    // Timeout or network error — silently return null, bio shows as fallback
+    return null;
+  }
 }
