@@ -7,25 +7,14 @@ const inter = Inter({ subsets: ["latin"], variable: '--font-inter' });
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: '--font-jetbrains-mono' });
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
+  title: 'GitHub Activity Visualizer | AI Developer Profiles',
+  description:
+    'Analyze any GitHub profile: language breakdown, top repositories, and an AI-generated developer identity synthesis.',
+  openGraph: {
+    title: 'GitHub Activity Visualizer',
+    description:
+      'Turn any GitHub username into an AI-powered developer profile.',
+    type: 'website',
   },
 }
 

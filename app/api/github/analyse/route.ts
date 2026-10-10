@@ -39,21 +39,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const openrouterKey = process.env.OPENROUTER_API_KEY;
-    if (!openrouterKey) {
+    const apiKey =
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.OPENROUTER_API_KEY;
+
+    if (!apiKey) {
       return NextResponse.json(
-        { error: 'Server configuration error.' },
+        { error: 'Server configuration error: missing API key.' },
         { status: 500 }
       );
     }
-
-    const MODELS = [
-      'openrouter/free',
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'deepseek/deepseek-r1:free',
-      'deepseek/deepseek-v3:free',
-      'meta-llama/llama-4-maverick:free',
-    ];
 
     // Fix 1 — Short prompt for faster response
     const PROMPT = `Analyze this GitHub developer profile in exactly 2 sentences. End with "Archetype: The [Label]" on its own line. Be specific and professional.
@@ -62,32 +58,74 @@ ${sanitizedData}`;
 
     let synthesis: string | null = null;
 
-    for (const model of MODELS) {
-      const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openrouterKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: PROMPT }],
-        }),
-      });
+    if (apiKey.startsWith('sk-or-')) {
+      const MODELS = [
+        'openrouter/free',
+        'meta-llama/llama-3.3-70b-instruct:free',
+        'deepseek/deepseek-r1:free',
+        'deepseek/deepseek-v3:free',
+        'meta-llama/llama-4-maverick:free',
+      ];
 
-      if (aiResponse.ok) {
-        const aiResult = await aiResponse.json();
-        const text = aiResult.choices?.[0]?.message?.content ?? null;
-        if (text) {
-          synthesis = text;
-          break;
+      for (const model of MODELS) {
+        const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: PROMPT }],
+          }),
+        });
+
+        if (aiResponse.ok) {
+          const aiResult = await aiResponse.json();
+          const text = aiResult.choices?.[0]?.message?.content ?? null;
+          if (text) {
+            synthesis = text.trim();
+            break;
+          }
         }
+
+        if (aiResponse.status === 429) continue;
+
+        const errBody = await aiResponse.text();
+        console.error(`❌ ${model} failed:`, aiResponse.status, errBody);
       }
+    } else {
+      // Default to Google AI Studio (Gemini)
+      const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-3-flash-preview'];
 
-      if (aiResponse.status === 429) continue;
+      for (const model of GEMINI_MODELS) {
+        const aiResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: PROMPT }] }],
+            }),
+          }
+        );
 
-      const errBody = await aiResponse.text();
-      console.error(`❌ ${model} failed:`, aiResponse.status, errBody);
+        if (aiResponse.ok) {
+          const aiResult = await aiResponse.json();
+          const text = aiResult.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+          if (text) {
+            synthesis = text.trim();
+            break;
+          }
+        }
+
+        if (aiResponse.status === 429) continue;
+
+        const errBody = await aiResponse.text();
+        console.error(`❌ Gemini ${model} failed:`, aiResponse.status, errBody);
+      }
     }
 
     return NextResponse.json({ synthesis });
